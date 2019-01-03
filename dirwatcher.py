@@ -17,9 +17,16 @@ logger = logging.getLogger(__file__)
 exit_flag = False
 
 
-def read_file_lines(file_to_read):
+def read_file_lines(file_to_read, starting_line, magic_text):
+
     with open(file_to_read) as f:
-        return f.readlines()
+        i = 0
+        for i, line in enumerate(f, 1):
+            if i >= starting_line:
+                if magic_text in line:
+                    logger.info('File: {} At line: {} Text: {}'
+                                .format(file_to_read, i, line))
+        return i
 
 
 def sig_handler(sig_num, frame):
@@ -34,30 +41,42 @@ def sig_handler(sig_num, frame):
 def directory_watcher(directory_to_search, magic_text,
                       polling, filter_extension):
     """Watches directory for changes"""
-    logger.info('Running this directory watcher function')
-    tried_files = []
+    directory_to_search = os.path.abspath(directory_to_search)
+    logger.info("I'm watching directory: {}".format(directory_to_search))
+
+    tried_files = {}
 
     while not exit_flag:
         try:
             time.sleep(float(polling))
-            os.chdir(directory_to_search)
-            directory = os.listdir(directory_to_search)
-            for file in directory:
-                print file
+            file_list = []
+
+            for f in os.listdir(directory_to_search):
+                if f.endswith(filter_extension):
+                    p = os.path.join(directory_to_search, f)
+                    file_list.append(os.path.abspath(p))
+
+            for file in file_list:
                 if file not in tried_files:
-                    tried_files.append(file)
-                    file_lines = read_file_lines(file)
-                else:
-                    break
-                for i, line in enumerate(file_lines):
-                    if magic_text in line:
-                        logger.info('File: {} At line: {} Text: {}'
-                                    .format(file, i + 1, line))
+                    logger.info('File added: {}'.format(file))
+                    tried_files[file] = 1
+
+            for file in list(tried_files):
+                # Coerced tried_files into list for safe removal of items from
+                # tried_files
+                if file not in file_list:
+                    logger.info('File removed: {}'.format(file))
+                    del tried_files[file]
+
+            for file, line_number in tried_files.items():
+                tried_files[file] = read_file_lines(file, line_number,
+                                                    magic_text) + 1
 
         except OSError as e:
-            logger.warn("this is an OS Error")
+            logger.warn(e)
+            logger.info('Retrying in 5 seconds ...')
+            time.sleep(5.0)
         except Exception as e:
-            # Something bad has happened
             logger.error('Unhandled exception: {}'.format(e))
             logger.info('Retrying in 5 seconds ...')
             time.sleep(5.0)
@@ -68,7 +87,6 @@ def directory_watcher(directory_to_search, magic_text,
 def main(directory_to_search, magic_text, polling, filter_extension):
     """Main function that sets up logger"""
     logging.basicConfig(
-        filename='log.txt',
         format='%(asctime)s.%(msecs)03d %(name)-12s %(levelname)-8s'
                '%(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
@@ -108,21 +126,13 @@ def main(directory_to_search, magic_text, polling, filter_extension):
 if __name__ == "__main__":
     """Sets up Parser and cmd line args, runs main"""
     parser = argparse.ArgumentParser()
-    parser.add_argument('-dir', help='Absolute path to directory to monitor')
-    parser.add_argument('-magic', help='Text to search in files in directory')
-    parser.add_argument('-ext', help='Extension to filter on')
-    parser.add_argument('--int', help='Polling interval')
+    parser.add_argument('dir', help='Absolute path to directory to monitor')
+    parser.add_argument('-m', '--magic',
+                        help='Text to search in files in directory')
+    parser.add_argument('-e', '--extension', help='Extension to filter on',
+                        default='txt', type=str)
+    parser.add_argument('-i', '--interval', help='Polling interval', default=1,
+                        type=int)
     args = parser.parse_args()
 
-    directory_to_search = args.dir
-    magic_text = args.magic
-
-    if args.int:
-        polling = args.int
-    else:
-        polling = 1
-
-    if args.ext:
-        filter_extension = args.ext
-
-    main(directory_to_search, magic_text, polling, filter_extension)
+    main(args.dir, args.magic, args.interval, args.extension)
