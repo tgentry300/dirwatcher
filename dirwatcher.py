@@ -18,7 +18,7 @@ exit_flag = False
 
 
 def read_file_lines(file_to_read, starting_line, magic_text):
-
+    """Reads files and logs if magic text is in line in file"""
     with open(file_to_read) as f:
         i = 0
         for i, line in enumerate(f, 1):
